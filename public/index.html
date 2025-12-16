@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>立即預約</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style>
+        :root {
+            --primary-color: #06c755; /* LINE Green */
+            --primary-dark: #05b34c;
+            --bg-color: #f5f6f8;
+            --text-main: #111111;
+            --text-sub: #888888;
+            --card-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --disabled-bg: #e9ecef;
+            --disabled-text: #adb5bd;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+            color: var(--text-main);
+            padding-bottom: 80px; /* 預留底部按鈕空間 */
+        }
+
+        /* --- Header 區域 --- */
+        header {
+            background: white;
+            padding: 20px;
+            border-bottom-left-radius: 24px;
+            border-bottom-right-radius: 24px;
+            box-shadow: var(--card-shadow);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--primary-color);
+            background-color: #eee;
+        }
+
+        .welcome-text h1 { margin: 0; font-size: 18px; font-weight: 700; }
+        .welcome-text p { margin: 4px 0 0; font-size: 13px; color: var(--text-sub); }
+
+        /* --- 日期選擇器 --- */
+        .section-title {
+            padding: 24px 20px 10px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .date-picker-container {
+            margin: 0 20px;
+            background: white;
+            border-radius: 16px;
+            padding: 6px;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            align-items: center;
+        }
+
+        input[type="date"] {
+            width: 100%;
+            border: none;
+            padding: 12px;
+            font-size: 16px;
+            font-family: inherit;
+            outline: none;
+            color: var(--text-main);
+            background: transparent;
+        }
+
+        /* --- 時段列表 --- */
+        .slots-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* 一行三個 */
+            gap: 12px;
+            padding: 10px 20px;
+        }
+
+        .slot-btn {
+            background: white;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 16px 0;
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--text-main);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        /* 可預約狀態 */
+        .slot-btn.available {
+            border-color: #e0e0e0;
+        }
+        .slot-btn.available:active {
+            transform: scale(0.95);
+            background-color: #f0fdf4;
+            border-color: var(--primary-color);
+        }
+
+        /* 選中狀態 */
+        .slot-btn.selected {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 10px rgba(6, 199, 85, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* 已額滿狀態 */
+        .slot-btn.booked {
+            background-color: var(--disabled-bg);
+            color: var(--disabled-text);
+            box-shadow: none;
+            cursor: not-allowed;
+            text-decoration: line-through;
+        }
+
+        /* 載入中動畫 */
+        .loading-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 40px;
+            color: var(--text-sub);
+        }
+        .spinner {
+            width: 30px; height: 30px;
+            border: 3px solid #eee;
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- 底部懸浮按鈕 --- */
+        .bottom-action {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: white;
+            padding: 16px 20px 24px; /*適配 iPhone Home Bar*/
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.05);
+            display: flex;
+            gap: 12px;
+            z-index: 999;
+        }
+
+        .submit-btn {
+            flex: 1;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .submit-btn:disabled {
+            background-color: var(--disabled-text);
+            cursor: not-allowed;
+        }
+        .submit-btn:active { opacity: 0.9; }
+
+        /* 隱藏內容直到 LIFF 載入 */
+        #app-content { opacity: 0; transition: opacity 0.3s; }
+        .visible { opacity: 1 !important; }
+
+    </style>
+</head>
+<body>
+
+    <div id="loader" style="position:fixed; inset:0; bg:white; z-index:2000; display:flex; justify-content:center; align-items:center; background:white;">
+        <div class="spinner"></div>
+    </div>
+
+    <div id="app-content">
+        <header>
+            <div class="user-info">
+                <img id="userAvatar" class="avatar" src="https://via.placeholder.com/48" alt="Avatar">
+                <div class="welcome-text">
+                    <p>Welcome back,</p>
+                    <h1 id="userName">載入中...</h1>
+                </div>
+            </div>
+        </header>
+
+        <div class="section-title">
+            <span>選擇日期</span>
+            <span style="font-size:12px; color:var(--primary-color);">今天</span>
+        </div>
+        <div class="date-picker-container">
+            <input type="date" id="dateInput">
+        </div>
+
+        <div class="section-title">
+            <span>選擇時段</span>
+            <span id="selectedTimeDisplay" style="color:var(--text-sub); font-weight:400; font-size:14px;">尚未選擇</span>
+        </div>
+        
+        <div id="slotsGrid" class="slots-grid">
+            </div>
+
+        <div class="bottom-action">
+            <button id="submitBtn" class="submit-btn" disabled>確認預約</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // ⚠️ 設定區：請填入你的 LIFF ID
+        // ==========================================
+        const MY_LIFF_ID = "2008709398-MCpAofl7"; 
+        // ==========================================
+
+        // DOM 元素
+        const els = {
+            app: document.getElementById('app-content'),
+            loader: document.getElementById('loader'),
+            avatar: document.getElementById('userAvatar'),
+            name: document.getElementById('userName'),
+            date: document.getElementById('dateInput'),
+            grid: document.getElementById('slotsGrid'),
+            submitBtn: document.getElementById('submitBtn'),
+            timeDisplay: document.getElementById('selectedTimeDisplay')
+        };
+
+        // 狀態管理
+        let state = {
+            selectedDate: new Date().toISOString().split('T')[0],
+            selectedTime: null,
+            userId: null,
+            displayName: null
+        };
+
+        // 1. 初始化
+        async function init() {
+            try {
+                // 設定日期預設值為今天
+                els.date.value = state.selectedDate;
+
+                // 啟動 LIFF
+                await liff.init({ liffId: MY_LIFF_ID });
+
+                if (!liff.isLoggedIn()) {
+                    liff.login();
+                    return;
+                }
+
+                // 取得用戶資料
+                const profile = await liff.getProfile();
+                state.userId = profile.userId;
+                state.displayName = profile.displayName;
+
+                // 更新 UI
+                els.name.innerText = state.displayName;
+                if (profile.pictureUrl) els.avatar.src = profile.pictureUrl;
+
+                // 顯示主畫面
+                els.loader.style.display = 'none';
+                els.app.classList.add('visible');
+
+                // 載入時段
+                loadSlots(state.selectedDate);
+
+            } catch (err) {
+                Swal.fire('錯誤', 'LIFF 初始化失敗：' + err.message, 'error');
+            }
+        }
+
+        // 2. 監聽日期改變
+        els.date.addEventListener('change', (e) => {
+            state.selectedDate = e.target.value;
+            state.selectedTime = null; // 重置選擇
+            updateSubmitBtn();
+            loadSlots(state.selectedDate);
+        });
+
+        // 3. 載入時段邏輯
+        async function loadSlots(date) {
+            els.grid.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>尋找空位中...</p></div>';
+            els.timeDisplay.innerText = '查詢中...';
+            
+            try {
+                const res = await fetch(`/api/slots?date=${date}`);
+                const data = await res.json();
+                
+                renderSlots(data.slots);
+            } catch (err) {
+                els.grid.innerHTML = '<p style="grid-column:1/-1; text-align:center; color:red;">無法連線到伺服器</p>';
+            }
+        }
+
+        // 4. 渲染按鈕
+        function renderSlots(slots) {
+            els.grid.innerHTML = ''; // 清空
+            els.timeDisplay.innerText = '尚未選擇';
+
+            if (slots.length === 0) {
+                els.grid.innerHTML = '<p style="grid-column:1/-1; text-align:center; color:#999;">今日已無時段</p>';
+                return;
+            }
+
+            slots.forEach(slot => {
+                const btn = document.createElement('div');
+                
+                // 決定樣式
+                let className = 'slot-btn';
+                if (slot.isBooked) className += ' booked';
+                else className += ' available';
+
+                btn.className = className;
+                btn.innerText = slot.time;
+
+                // 點擊事件
+                if (!slot.isBooked) {
+                    btn.onclick = () => selectSlot(btn, slot.time);
+                }
+
+                els.grid.appendChild(btn);
+            });
+        }
+
+        // 5. 選擇時段 (單選邏輯)
+        function selectSlot(btnElement, time) {
+            // 清除其他按鈕的 selected 樣式
+            document.querySelectorAll('.slot-btn.selected').forEach(el => el.classList.remove('selected'));
+            
+            // 選中當前按鈕
+            btnElement.classList.add('selected');
+            
+            // 更新狀態
+            state.selectedTime = time;
+            els.timeDisplay.innerText = `${state.selectedDate} ${time}`;
+            
+            updateSubmitBtn();
+        }
+
+        // 6. 更新送出按鈕狀態
+        function updateSubmitBtn() {
+            if (state.selectedTime) {
+                els.submitBtn.disabled = false;
+                els.submitBtn.innerText = `確認預約 ${state.selectedTime}`;
+            } else {
+                els.submitBtn.disabled = true;
+                els.submitBtn.innerText = '請選擇時段';
+            }
+        }
+
+        // 7. 送出預約
+        els.submitBtn.onclick = async () => {
+            // 使用 SweetAlert2 做漂亮確認窗
+            const result = await Swal.fire({
+                title: '確認預約？',
+                html: `日期：${state.selectedDate}<br>時間：<b>${state.selectedTime}</b>`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#06c755',
+                cancelButtonColor: '#d33',
+                confirmButtonText: '確定',
+                cancelButtonText: '取消'
+            });
+
+            if (!result.isConfirmed) return;
+
+            // 顯示 Loading
+            Swal.fire({
+                title: '處理中...',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            try {
+                const res = await fetch('/api/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: state.userId,
+                        date: state.selectedDate,
+                        time: state.selectedTime
+                    })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    // 預約成功
+                    await Swal.fire({
+                        title: '預約成功！',
+                        text: '我們會透過 LINE 通知您',
+                        icon: 'success',
+                        confirmButtonColor: '#06c755'
+                    });
+
+                    // LINE 傳訊回饋
+                    if (liff.isInClient()) {
+                        //await liff.sendMessages([{
+                        //    type: 'text',
+                        //    text: `📅 我已成功預約\n日期：${state.selectedDate}\n時間：${state.selectedTime}`
+                        //}]);
+                        liff.closeWindow(); // 關閉視窗
+                    }
+                    
+                    // 如果是在瀏覽器測試，就重整頁面
+                    loadSlots(state.selectedDate);
+                    state.selectedTime = null;
+                    updateSubmitBtn();
+
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                Swal.fire('失敗', err.message, 'error');
+            }
+        };
+
+        // 啟動程式
+        init();
+
+    </script>
+</body>
+</html>
