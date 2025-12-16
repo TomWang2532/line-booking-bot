@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { createClient } = require('@supabase/supabase-js');
-const cors = require('cors'); // 之後前端 LIFF 會用到，先裝起來
+const cors = require('cors'); 
 
 // 1. 設定
 const lineConfig = {
@@ -10,15 +10,17 @@ const lineConfig = {
   channelSecret: process.env.CHANNEL_SECRET,
 };
 
+// 初始化 Supabase
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// 初始化 Express
 const app = express();
 
-// 允許 JSON 格式的請求 (為了讓 LIFF 可以傳資料過來)
-app.use(express.json());
+// --- 中介軟體 (Middleware) ---
 app.use(cors());
-app.use(express.static('public'));
 
-// --- LINE Webhook (保留原本的聊天功能) ---
+// ⚠️ 重要修正：LINE Webhook 必須放在 express.json() 之前！
+// 因為它需要讀取原始的 binary stream 來驗證簽章
 app.post('/callback', line.middleware(lineConfig), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
@@ -28,15 +30,19 @@ app.post('/callback', line.middleware(lineConfig), (req, res) => {
     });
 });
 
-// --- 新增：API 區域 (給 LIFF 網頁用的) ---
+// ⚠️ 這裡才開始啟用 JSON 解析 (給後面的 API 使用)
+app.use(express.json());
+app.use(express.static('public')); 
 
-// API 1: 查詢某日期的可預約時段
-// 用法: GET /api/slots?date=2025-12-20
+// ==========================================
+// API 區域
+// ==========================================
+
+// API 1: 查詢時段
 app.get('/api/slots', async (req, res) => {
   const { date } = req.query;
-  if (!date) return res.status(400).json({ error: 'Missing date parameter' });
+  if (!date) return res.status(400).json({ error: '缺少 date 參數' });
 
-  // 1. 定義全天時段 (08:00 - 22:00)
   const allSlots = [];
   for (let i = 8; i <= 21; i++) {
     const hour = i.toString().padStart(2, '0');
@@ -44,33 +50,29 @@ app.get('/api/slots', async (req, res) => {
   }
 
   try {
-    // 2. 去資料庫查那天已經被訂走的時段
     const { data: booked, error } = await supabase
       .from('appointments')
       .select('start_time')
       .eq('booking_date', date)
-      .in('status', ['pending', 'confirmed']); // 只看待審核和已確認的
+      .in('status', ['pending', 'confirmed']);
 
     if (error) throw error;
 
-    // 3. 過濾出剩下的空位
-    const bookedTimes = booked.map(b => b.start_time.slice(0, 5)); // 取 "14:00" 格式
-    const availableSlots = allSlots.map(time => ({
+    const bookedTimes = booked.map(b => b.start_time.slice(0, 5)); 
+    
+    const slotsData = allSlots.map(time => ({
       time,
       isBooked: bookedTimes.includes(time)
     }));
 
-    res.json({ date, slots: availableSlots });
-
+    res.json({ date, slots: slotsData });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    console.error('查詢失敗:', err);
+    res.status(500).json({ error: '資料庫查詢錯誤' });
   }
 });
 
-// API 2: 送出預約請求
-// 用法: POST /api/bookings
-// API 2: 送出預約請求 (防黃牛加強版)
+// API 2: 預約 (防黃牛版)
 app.post('/api/bookings', async (req, res) => {
   const { userId, date, time } = req.body; 
 
@@ -79,65 +81,44 @@ app.post('/api/bookings', async (req, res) => {
   }
 
   try {
-    // 1. 換取 User ID
-    const { data: user } = await supabase
-      .from('users')
-      .select('id')
-      .eq('line_user_id', userId)
-      .single();
-    
+    const { data: user } = await supabase.from('users').select('id').eq('line_user_id', userId).single();
     if (!user) return res.status(404).json({ error: '找不到此用戶' });
 
-    // ==========================================
-    // 🛑 防黃牛邏輯開始
-    // ==========================================
-
-    // 規則 A: 檢查該時段是否已被別人訂走
+    // 規則 A: 該時段是否被搶走
     const { data: slotTaken } = await supabase
       .from('appointments')
       .select('id')
       .eq('booking_date', date)
       .eq('start_time', time)
-      .in('status', ['pending', 'confirmed']) // 只要有人卡位就不行
-      .maybeSingle();
+      .in('status', ['pending', 'confirmed']);
 
-    if (slotTaken) {
+    if (slotTaken && slotTaken.length > 0) {
       return res.status(409).json({ error: '慢了一步！該時段剛被搶走' });
     }
 
-    // 規則 B: 檢查這個人當天是否已經有預約了？ (每日限購一單)
+    // 規則 B: 每日限購
     const { data: myBookings } = await supabase
       .from('appointments')
       .select('id')
       .eq('user_id', user.id)
       .eq('booking_date', date)
-      .in('status', ['pending', 'confirmed']) // 不包含已取消的
-      // .maybeSingle();
+      .in('status', ['pending', 'confirmed']);
 
-    // 修正重點：只要找到任何一筆 (length > 0)，就直接擋
     if (myBookings && myBookings.length > 0) {
       return res.status(400).json({ error: '您當天已有預約，請勿重複佔位' });
     }
 
-    // ==========================================
-    // 🛑 防黃牛邏輯結束，放行！
-    // ==========================================
-
-    // 3. 寫入預約單
     const { error } = await supabase
       .from('appointments')
-      .insert([
-        { 
+      .insert([{ 
           user_id: user.id,
           booking_date: date,
           start_time: time,
           end_time: `${parseInt(time) + 1}:00`,
           status: 'pending' 
-        }
-      ]);
+      }]);
 
     if (error) throw error;
-
     res.json({ success: true, message: '預約申請已送出' });
 
   } catch (err) {
@@ -145,14 +126,21 @@ app.post('/api/bookings', async (req, res) => {
     res.status(500).json({ error: '伺服器錯誤' });
   }
 });
-// --- 事件處理 (跟原本一樣) ---
+
+// --- 事件處理 ---
 const client = new line.Client(lineConfig);
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
-  
-  // 自動註冊邏輯 (省略重複代碼，保留你原本寫的即可)
-  // ...
-  
+
+  const userId = event.source.userId;
+  try {
+    const { data: user } = await supabase.from('users').select('id').eq('line_user_id', userId).single();
+    if (!user) {
+      await supabase.from('users').insert([{ line_user_id: userId }]);
+      console.log(`新用戶 ${userId} 自動註冊成功`);
+    }
+  } catch (e) { console.error(e); }
+
   return client.replyMessage(event.replyToken, {
     type: 'text',
     text: `收到：${event.message.text}`
