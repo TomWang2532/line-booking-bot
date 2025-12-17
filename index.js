@@ -84,13 +84,18 @@ app.get('/api/user/profile', async (req, res) => {
 
 // API: Update User Profile
 app.post('/api/user/profile', async (req, res) => {
-  const { userId, real_name, phone, birthday, referrer } = req.body;
+  const { userId, real_name, name, realName, phone, birthday, referrer } = req.body;
 
   if (!userId) return res.status(400).json({ error: 'Missing userId' });
 
   try {
     const updates = {};
-    if (real_name !== undefined) updates.name = real_name;
+    
+    // 2. 聰明判斷：不管是哪個欄位有值，都存進資料庫的 'name'
+    const incomingName = real_name || name || realName;
+    if (incomingName) updates.name = incomingName;
+
+    // 其他欄位照舊
     if (phone !== undefined) updates.phone = phone;
     if (birthday !== undefined) updates.birthday = birthday;
     if (referrer !== undefined) updates.referrer = referrer;
