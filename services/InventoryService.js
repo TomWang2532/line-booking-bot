@@ -11,16 +11,16 @@ class InventoryService {
     // Inventory Mode: Read from daily_slots
     const { data: slots, error } = await this.supabase
       .from('daily_slots')
-      .select('time, status, is_open')
+      .select('start_time, status, is_open')
       .eq('date', date)
       .eq('is_open', true)
-      .order('time');
+      .order('start_time');
 
     if (error) throw error;
 
     // Map to simple format
     return slots.map(slot => ({
-      time: slot.time.slice(0, 5), // HH:MM
+      time: slot.start_time.slice(0, 5), // HH:MM
       isBooked: slot.status !== 'available',
       status: slot.status
     }));
@@ -44,7 +44,7 @@ class InventoryService {
       .from('daily_slots')
       .select('id, status')
       .eq('date', date)
-      .eq('time', time) // time should be HH:MM:00 or similar match
+      .eq('start_time', time) // time should be HH:MM:00 or similar match
       .single();
 
     if (slotError) {
