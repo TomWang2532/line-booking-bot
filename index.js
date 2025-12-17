@@ -125,11 +125,31 @@ app.post('/api/bookings', async (req, res) => {
 
   } catch (err) {
     console.error('預約失敗:', err.message);
-    if (err.message.includes('User is blocked')) return res.status(403).json({ error: err.message });
-    if (err.message.includes('Quota exceeded')) return res.status(403).json({ error: err.message });
-    if (err.message.includes('Slot was just taken') || err.message.includes('Slot not found')) return res.status(409).json({ error: err.message });
 
-    res.status(500).json({ error: '伺服器錯誤' });
+    // --- 錯誤訊息中文化翻譯區 (Translation Layer) ---
+    
+    // 1. 黑名單 / 權限問題
+    if (err.message.includes('User is blocked')) {
+        return res.status(403).json({ error: '很抱歉，您的帳號目前無法使用預約功能。' });
+    }
+    
+    // 2. 家族額度 / 限購問題
+    if (err.message.includes('Quota exceeded') || err.message.includes('Group quota')) {
+        return res.status(403).json({ error: '哎呀！本週預約額度已滿，請留給其他人機會喔！' });
+    }
+    
+    // 3. 每日限制 (如果還保留的話)
+    if (err.message.includes('Daily limit')) {
+        return res.status(400).json({ error: '您當天已有預約，請勿重複佔位。' });
+    }
+
+    // 4. 搶票失敗 (被搶走)
+    if (err.message.includes('Slot was just taken') || err.message.includes('Slot not found')) {
+        return res.status(409).json({ error: '慢了一步！該時段剛剛被搶走了 😭' });
+    }
+
+    // 5. 其他未知錯誤
+    res.status(500).json({ error: '系統忙碌中，請稍後再試。' });
   }
 });
 
