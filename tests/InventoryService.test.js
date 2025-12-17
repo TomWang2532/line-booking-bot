@@ -16,8 +16,8 @@ describe('InventoryService', () => {
     describe('getSlots', () => {
         it('should return formatted slots', async () => {
             const mockSlots = [
-                { time: '08:00:00', status: 'available', is_open: true },
-                { time: '09:00:00', status: 'booked', is_open: true }
+                { start_time: '08:00:00', status: 'available', is_open: true },
+                { start_time: '09:00:00', status: 'booked', is_open: true }
             ];
 
             const chain = {
