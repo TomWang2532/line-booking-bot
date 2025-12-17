@@ -132,7 +132,8 @@ app.get('/api/slots', async (req, res) => {
 // API 2: 預約 (防黃牛版 + Inventory Mode)
 app.post('/api/bookings', async (req, res) => {
   const { userId, date, time } = req.body; 
-
+  // 🔍 加入這行監視器：
+  console.log('收到預約請求:', { userId, date, time });
   if (!userId || !date || !time) {
     return res.status(400).json({ error: '資料不完整' });
   }
