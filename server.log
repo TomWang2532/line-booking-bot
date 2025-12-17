@@ -1,0 +1,52 @@
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+Server is running on port 3000
+Profile fetch error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+Profile fetch error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+Profile update error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+Profile fetch error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}
+Profile update error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '\n' +
+    'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+    'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+    '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+  hint: '',
+  code: ''
+}

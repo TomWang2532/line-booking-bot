@@ -193,6 +193,7 @@
         #app-content { opacity: 0; transition: opacity 0.3s; }
         .visible { opacity: 1 !important; }
 
+        .swal2-container { z-index: 2001 !important; }
     </style>
 </head>
 <body>
@@ -283,15 +284,91 @@
                 els.name.innerText = state.displayName;
                 if (profile.pictureUrl) els.avatar.src = profile.pictureUrl;
 
-                // 顯示主畫面
-                els.loader.style.display = 'none';
-                els.app.classList.add('visible');
-
-                // 載入時段
-                loadSlots(state.selectedDate);
+                // Check Registration Status
+                await checkRegistration();
 
             } catch (err) {
                 Swal.fire('錯誤', 'LIFF 初始化失敗：' + err.message, 'error');
+            }
+        }
+
+        async function checkRegistration() {
+            try {
+                const res = await fetch(`/api/user/profile?userId=${state.userId}`);
+                const data = await res.json();
+
+                if (!data.real_name) {
+                    // Not registered: Show Modal
+                    await showRegistrationModal();
+                } else {
+                    // Registered: Show App and Load Slots
+                    els.loader.style.display = 'none';
+                    els.app.classList.add('visible');
+                    loadSlots(state.selectedDate);
+                }
+            } catch (err) {
+                console.error(err);
+                Swal.fire('錯誤', '無法取得用戶資料', 'error');
+            }
+        }
+
+        async function showRegistrationModal() {
+            const { value: formValues } = await Swal.fire({
+                title: '新用戶註冊',
+                html:
+                    '<input id="swal-input1" class="swal2-input" placeholder="真實姓名">' +
+                    '<input id="swal-input2" class="swal2-input" placeholder="手機號碼">',
+                focusConfirm: false,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                confirmButtonText: '註冊',
+                confirmButtonColor: '#06c755',
+                preConfirm: () => {
+                    const name = document.getElementById('swal-input1').value;
+                    const phone = document.getElementById('swal-input2').value;
+                    if (!name || !phone) {
+                        Swal.showValidationMessage('請輸入姓名與手機號碼');
+                        return false;
+                    }
+                    return { real_name: name, phone: phone };
+                }
+            });
+
+            if (formValues) {
+                // Submit Registration
+                Swal.fire({
+                    title: '註冊中...',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                try {
+                    const res = await fetch('/api/user/profile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: state.userId,
+                            ...formValues
+                        })
+                    });
+
+                    if (res.ok) {
+                        await Swal.fire({
+                            title: '註冊成功！',
+                            icon: 'success',
+                            confirmButtonColor: '#06c755'
+                        });
+
+                        // Proceed to App
+                        els.loader.style.display = 'none';
+                        els.app.classList.add('visible');
+                        loadSlots(state.selectedDate);
+                    } else {
+                        throw new Error('註冊失敗');
+                    }
+                } catch (err) {
+                    Swal.fire('錯誤', err.message, 'error').then(() => showRegistrationModal()); // Retry
+                }
             }
         }
 

@@ -44,6 +44,71 @@ app.use(express.static('public'));
 // API 區域
 // ==========================================
 
+// API: Get User Profile
+app.get('/api/user/profile', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+
+  try {
+    let { data: user, error } = await supabase
+      .from('users')
+      .select('name, phone, birthday, referrer')
+      .eq('line_user_id', userId)
+      .single();
+
+    if (!user && (error && error.code === 'PGRST116')) {
+       // User not found, create one
+       const { data: newUser, error: createError } = await supabase
+         .from('users')
+         .insert([{ line_user_id: userId }])
+         .select('name, phone, birthday, referrer')
+         .single();
+
+       if (createError) throw createError;
+       user = newUser;
+    } else if (error) {
+      throw error;
+    }
+
+    res.json({
+      real_name: user.name,
+      phone: user.phone,
+      birthday: user.birthday,
+      referrer: user.referrer
+    });
+  } catch (err) {
+    console.error('Profile fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// API: Update User Profile
+app.post('/api/user/profile', async (req, res) => {
+  const { userId, real_name, phone, birthday, referrer } = req.body;
+
+  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+
+  try {
+    const updates = {};
+    if (real_name !== undefined) updates.name = real_name;
+    if (phone !== undefined) updates.phone = phone;
+    if (birthday !== undefined) updates.birthday = birthday;
+    if (referrer !== undefined) updates.referrer = referrer;
+
+    const { error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('line_user_id', userId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 // API 1: 查詢時段
 app.get('/api/slots', async (req, res) => {
   const { date } = req.query;
