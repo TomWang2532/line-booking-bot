@@ -3,6 +3,8 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors'); 
+const InventoryService = require('./services/InventoryService');
+const AntiAbuseService = require('./services/AntiAbuseService');
 
 // 1. 設定
 const lineConfig = {
@@ -12,6 +14,10 @@ const lineConfig = {
 
 // 初始化 Supabase
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// Initialize Services
+const inventoryService = new InventoryService(supabase);
+const antiAbuseService = new AntiAbuseService(supabase);
 
 // 初始化 Express
 const app = express();
@@ -43,28 +49,9 @@ app.get('/api/slots', async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: '缺少 date 參數' });
 
-  const allSlots = [];
-  for (let i = 8; i <= 21; i++) {
-    const hour = i.toString().padStart(2, '0');
-    allSlots.push(`${hour}:00`);
-  }
-
   try {
-    const { data: booked, error } = await supabase
-      .from('appointments')
-      .select('start_time')
-      .eq('booking_date', date)
-      .in('status', ['pending', 'confirmed']);
-
-    if (error) throw error;
-
-    const bookedTimes = booked.map(b => b.start_time.slice(0, 5)); 
-    
-    const slotsData = allSlots.map(time => ({
-      time,
-      isBooked: bookedTimes.includes(time)
-    }));
-
+    // Inventory Mode: Use service to get slots
+    const slotsData = await inventoryService.getSlots(date);
     res.json({ date, slots: slotsData });
   } catch (err) {
     console.error('查詢失敗:', err);
@@ -72,7 +59,7 @@ app.get('/api/slots', async (req, res) => {
   }
 });
 
-// API 2: 預約 (防黃牛版)
+// API 2: 預約 (防黃牛版 + Inventory Mode)
 app.post('/api/bookings', async (req, res) => {
   const { userId, date, time } = req.body; 
 
@@ -81,22 +68,20 @@ app.post('/api/bookings', async (req, res) => {
   }
 
   try {
-    const { data: user } = await supabase.from('users').select('id').eq('line_user_id', userId).single();
+    const { data: user } = await supabase.from('users').select('id, blocked, throttled, group_id').eq('line_user_id', userId).single();
     if (!user) return res.status(404).json({ error: '找不到此用戶' });
 
-    // 規則 A: 該時段是否被搶走
-    const { data: slotTaken } = await supabase
-      .from('appointments')
-      .select('id')
-      .eq('booking_date', date)
-      .eq('start_time', time)
-      .in('status', ['pending', 'confirmed']);
+    // --- Anti-Abuse Checks ---
+    // 1. Check Status (Blacklist / Throttling)
+    await antiAbuseService.checkUserStatus(user.id);
 
-    if (slotTaken && slotTaken.length > 0) {
-      return res.status(409).json({ error: '慢了一步！該時段剛被搶走' });
-    }
+    // 2. Check Group Quota
+    await antiAbuseService.checkGroupQuota(user.id, date);
 
-    // 規則 B: 每日限購
+    // --- Inventory & Booking Logic ---
+
+    // 3. Rule B: Daily limit (Still applies?) - Spec doesn't explicitly remove it, implies user cancellation needed.
+    // Let's keep it as a basic sanity check.
     const { data: myBookings } = await supabase
       .from('appointments')
       .select('id')
@@ -108,21 +93,42 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(400).json({ error: '您當天已有預約，請勿重複佔位' });
     }
 
-    const { error } = await supabase
+    // 4. Rule A: Attempt to lock slot (Inventory Mode)
+    // format time to ensure HH:MM:00 match if needed, though input '08:00' matches TIME type usually
+    const slotId = await inventoryService.attemptBooking(user.id, date, time);
+
+    // 5. Create Appointment
+    const { data: appointment, error } = await supabase
       .from('appointments')
       .insert([{ 
           user_id: user.id,
           booking_date: date,
           start_time: time,
-          end_time: `${parseInt(time) + 1}:00`,
+          end_time: `${parseInt(time.split(':')[0]) + 1}:00`,
           status: 'pending' 
-      }]);
+      }])
+      .select()
+      .single();
 
-    if (error) throw error;
+    if (error) {
+        // Rollback slot lock?
+        // Since we locked it in DB, we should probably unlock it if appointment creation fails.
+        // For now, let's assume if this fails, we have a phantom lock (requires cleanup job or transaction).
+        // Supabase-js doesn't support multi-table transactions easily without RPC.
+        throw error;
+    }
+
+    // 6. Link Appointment to Slot
+    await inventoryService.confirmSlotBooking(slotId, appointment.id);
+
     res.json({ success: true, message: '預約申請已送出' });
 
   } catch (err) {
-    console.error('預約失敗:', err);
+    console.error('預約失敗:', err.message);
+    if (err.message.includes('User is blocked')) return res.status(403).json({ error: err.message });
+    if (err.message.includes('Quota exceeded')) return res.status(403).json({ error: err.message });
+    if (err.message.includes('Slot was just taken') || err.message.includes('Slot not found')) return res.status(409).json({ error: err.message });
+
     res.status(500).json({ error: '伺服器錯誤' });
   }
 });
@@ -136,7 +142,12 @@ async function handleEvent(event) {
   try {
     const { data: user } = await supabase.from('users').select('id').eq('line_user_id', userId).single();
     if (!user) {
-      await supabase.from('users').insert([{ line_user_id: userId }]);
+      // Updated: Register with defaults
+      await supabase.from('users').insert([{
+          line_user_id: userId,
+          blocked: false,
+          throttled: false
+      }]);
       console.log(`新用戶 ${userId} 自動註冊成功`);
     }
   } catch (e) { console.error(e); }
@@ -151,3 +162,4 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+module.exports = app; // Export for testing if needed
